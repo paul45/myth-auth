@@ -75,7 +75,7 @@ class FlatAuthorization implements AuthorizeInterface
 
         $userGroups = $this->groupModel->getGroupsForUser((int)$userId);
 
-        if (! $userGroups)
+        if (empty($userGroups))
         {
             return false;
         }
@@ -92,8 +92,9 @@ class FlatAuthorization implements AuthorizeInterface
             }
             else if (is_string($group))
             {
-                $ids = array_column($userGroups, 'name');
-                if (in_array($group, $ids))
+                $names = array_column($userGroups, 'name');
+
+                if (in_array($group, $names))
                 {
                     return true;
                 }
@@ -140,7 +141,7 @@ class FlatAuthorization implements AuthorizeInterface
         // Still here? Then we have one last check to make - any user private permissions.
         return $this->doesUserHavePermission($userId, (int)$permissionId);
     }
-
+    
     /**
      * Makes a member a part of a group.
      *
@@ -338,10 +339,7 @@ class FlatAuthorization implements AuthorizeInterface
 
         if (! in_array($permissionId, $permissions))
         {
-            $permissions[] = $permissionId;
-
-            $user->setPermissions($permissions);
-            $this->userModel->save($user);
+            $this->permissionModel->addPermissionToUser($permissionId, $user->id);
         }
 
         return true;
@@ -354,6 +352,8 @@ class FlatAuthorization implements AuthorizeInterface
      *
      * @param int/string $permission
      * @param int $userId
+     *
+     * @return bool|mixed|null
      */
     public function removePermissionFromUser($permission, int $userId)
     {
@@ -376,28 +376,7 @@ class FlatAuthorization implements AuthorizeInterface
             return false;
         }
 
-        $user = $this->userModel->find($userId);
-
-        if (! $user)
-        {
-            $this->error = lang('Auth.userNotFound', [$userId]);
-            return false;
-        }
-
-        // Grab the existing permissions for this user, and remove
-        // the permission id from the list.
-        $permissions = $user->getPermissions();
-
-        if (in_array($permissionId, $permissions))
-        {
-            unset($permissions[array_search($permissionId, $permissions)]);
-
-            $user->setPermissions($permissions);
-            $this->userModel->save($user);
-        }
-
-        // Save the updated permissions
-        return true;
+        return $this->permissionModel->removePermissionFromUser($permissionId, $userId);
     }
 
     /**
@@ -422,17 +401,7 @@ class FlatAuthorization implements AuthorizeInterface
             return null;
         }
 
-        $user = $this->userModel->find($userId);
-
-        if (! $user)
-        {
-            $this->error = lang('Auth.userNotFound', [$userId]);
-            return false;
-        }
-
-        $permissions = $user->getPermissions();
-
-        return in_array($permissionId, $permissions);
+        return $this->permissionModel->doesUserHavePermission($userId, $permissionId);
     }
 
     //--------------------------------------------------------------------
@@ -592,7 +561,45 @@ class FlatAuthorization implements AuthorizeInterface
     }
 
     /**
-     * Returns an array of all permissions in the system.
+     * Returns an array of all permissions in the system for a group
+     * The group can be either the ID or the name of the group.
+     * 
+     * @param int|string $group
+     * 
+     * @return mixed
+     */
+    public function groupPermissions($group)
+    {
+        if (is_numeric($group))
+        {
+            return $this->groupModel->getPermissionsForGroup($group);
+        }else
+        {
+            $g = $this->groupModel->where('name', $group)->first();
+            return $this->groupModel->getPermissionsForGroup($g->id);
+        }
+    }
+    
+    /**
+     * Returns an array of all permissions in the system for all group
+     * 
+     * 
+     * @return mixed
+     */
+    public function groupsPermissions()
+    {
+        $groups=$this->groups();
+
+        foreach ($groups as $key => $group) {
+            
+            $groupPermissions = $this->groupModel->getPermissionsForGroup($group->id);
+            $groups[$key]->permissions = $groupPermissions;
+        }
+        return $groups;
+    }
+    
+    /**
+     * Returns an array of all permissions of a group.
      *
      * @return mixed
      */
